@@ -1,0 +1,22 @@
+// launch.jsonにリネームして使用する。
+
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: 現在のファイル",
+            // "type": "python",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                // "PYTHONPATH": "${workspaceFolder}",
+            },
+            "args": [
+                // "--mode", "exec",
+            ],
+        }
+    ]
+}
