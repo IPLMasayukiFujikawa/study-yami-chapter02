@@ -169,3 +169,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Requirement packages
+requirements.txt
+
+# Visual Studio Code
+.vscode/*.*
+!.vscode/launch.json.sample
