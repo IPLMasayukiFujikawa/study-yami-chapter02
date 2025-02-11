@@ -1,5 +1,7 @@
 # import os
 import openai
+import json
+import requests
 
 
 def get_wheather(client):
@@ -113,6 +115,150 @@ def get_description_of_image(client):
 
 #     return response.choices[0].message.content
 
+def get_area_code(area_name):
+    """指定されたエリア名称からエリアコードを取得・返却する。
+
+    Args:
+        area_name エリア名称（e.g. 神奈川県）
+
+    Returns:
+        str: 予報区コード
+    """
+
+    # 気象庁 予報区コードの一覧
+    url = "https://www.jma.go.jp/bosai/common/const/area.json"
+    response = requests.get(url)
+    data = json.loads(response.text)
+
+    # 取得データより引数で指定されたコードを探索
+    for code, info in data["offices"].items():
+        if info["name"] == area_name:
+            return code
+    return None   # Not found
+
+
+def get_current_weather(location):
+    """指定されたエリア名称からエリアコードを取得・返却する。
+
+    Args:
+        location エリア名称（e.g. 神奈川県）
+
+    Returns:
+        str: 予報区コード
+    """
+
+    # 気象庁の予報区コードを調べる。
+    area_code = get_area_code(location)
+
+    overview = ""
+    if area_code is None:
+        # return json.dumps({"error": "location not found"})
+        overview = "その地域の予報は分かりませんでした。"
+    else:
+        # 情報取得
+        url = f"https://www.jma.go.jp/bosai/forecast/data/overview_forecast/{area_code}.json"
+        response = requests.get(url)
+        data = json.loads(response.text)
+        overview = data["text"]
+
+    # return json.dumps({"location": location, "overview": overview})
+    return overview
+
+
+def get_current_weather_info(client):
+    """Function callingを使用して指定エリアの天気を返却する。
+
+    Args:
+        client (OpenAI): OpenAIクラスインスタンス
+
+    Returns:
+        str: 回答文字列
+    """
+    
+    # Debug
+    # location = "熊本県"
+    # area_code = get_area_code(location)
+    # print(location, area_code)
+    # overview = get_current_weather(location)
+    # print(overview)
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_weather",
+                "description": "Get the current weather in a given location",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "The city and state, e.g. 神奈川県",
+                        },
+                    },
+                    "required": ["location"],
+                },
+            },
+        }
+    ]
+
+    messages = [
+        {"role": "user", "content": "熊本県の天気は？"}
+    ]
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+        tools=tools,    # 以前は functions であったもの（functionsは非推奨）
+    )
+
+    # print(response.to_json(indent=2))
+
+    # レスポンスに tool_calls という要素があり、
+    # 「get_current_weatherを、こんな引数で実行したい」という内容のが書かれている。
+    # LLMが、この質問を答えるには、get_current_weatherを
+    # 「{“location”: “熊本県”}」という引数で実行する必要がある。と判断している。
+
+    # 会話履歴を追加する。
+    response_message = response.choices[0].message
+    messages.append(response_message.to_dict())
+
+    # 利用可能な関数群
+    available_functions = {
+        "get_current_weather": get_current_weather,
+    }
+
+    # 関数群に対するループ
+    for tool_call in response_message.tool_calls:
+        # 関数を実行
+        function_name = tool_call.function.name
+        function_to_call = available_functions[function_name]
+        function_args = json.loads(tool_call.function.arguments)
+        function_response = function_to_call(
+            location=function_args.get("location"),
+        )
+        # print(function_response)
+
+        # 関数の実行結果を会話履歴としてmessagesに追加
+        messages.append(
+            {
+                "tool_call_id": tool_call.id,
+                "role": "tool",
+                "name": function_name,
+                "content": function_response,
+            }
+        )
+
+    # print(json.dumps(messages, ensure_ascii=False, indent=2))
+    second_response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+    )
+
+    # print(second_response.to_json(indent=2))
+
+    return second_response.to_json(indent=2)
+
 
 def main():
     """メインエントリポイント
@@ -129,13 +275,17 @@ def main():
     # res_charactors = get_charactors(client)
     # print(res_charactors)
 
-    # 指定画像の説明を返却する。
-    res_desc_of_img = get_description_of_image(client)
-    print(res_desc_of_img)
+    # # 指定画像の説明を返却する。
+    # res_desc_of_img = get_description_of_image(client)
+    # print(res_desc_of_img)
 
     # # 指定画像（ローカル）の説明を返却する。
     # res_desc_of_localimg = get_description_of_localimage(client)
     # print(res_desc_of_localimg)
+
+    # 指定エリアの天気予報を返却する。
+    res_current_weather = get_current_weather_info(client)
+    print(res_current_weather)
 
 
 if __name__ == '__main__':
